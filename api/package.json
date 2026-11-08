@@ -1,0 +1,10 @@
+{
+  "name": "red-goblin",
+  "version": "1.0.0",
+  "description": "Formant speech synthesizer (Russian and English) as a library and a free HTTP API",
+  "main": "goblin.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=16" },
+  "keywords": ["text-to-speech", "tts", "formant-synthesis", "klatt", "speech-synthesis", "russian", "english"],
+  "license": "MIT"
+}
