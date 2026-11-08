@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Гоблин Красный</title>
+<style>
+:root{color-scheme:light;--bg:#fff;--fg:#000;--card:#fff;--ac:#000;--mu:#555;--bd:#999;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+
+
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 Arial,Helvetica,sans-serif}
+main{max-width:560px;margin:0 auto;padding:18px 16px 40px}
+h1{font:400 22px/1.2 Arial,Helvetica,sans-serif;margin:0 0 6px}
+p.s{color:var(--mu);margin:0 0 14px;font-size:14px}
+textarea{width:100%;box-sizing:border-box;min-height:110px;padding:12px;border:1px solid var(--bd);border-radius:10px;background:var(--card);color:var(--fg);font:16px/1.4 Arial,Helvetica,sans-serif;resize:vertical}
+.row{display:flex;align-items:center;gap:10px;margin:10px 0}
+.row label{flex:0 0 112px;font-size:14px;color:var(--mu)}
+.row input{flex:1;accent-color:var(--ac)}
+.row output{flex:0 0 38px;font:13px ui-monospace,monospace;text-align:right}
+button{font:16px Arial,Helvetica,sans-serif;padding:8px 18px;border:1px solid #000;border-radius:0;background:#eee;color:#000;margin-right:8px}
+button.g{}
+pre{white-space:pre-wrap;word-break:break-word;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px;font:13px/1.5 ui-monospace,monospace;color:var(--mu);overflow-x:auto}
+</style>
+</head>
+<body>
+<main>
+<h1>Гоблин Красный</h1>
+<p class="s">Говорящий синтезатор. Ударение можно ставить знаком +, например: прив+ет.</p>
+<textarea id="t">Привет, я гоблин красный буду с вами</textarea>
+<div class="row"><label>Скорость</label><input id="speed" type="range" min="0.6" max="1.6" step="0.05" value="0.8"><output></output></div>
+<div class="row"><label>Высота, Гц</label><input id="pitch" type="range" min="70" max="220" step="1" value="105"><output></output></div>
+<div class="row"><label>Интонация</label><input id="accent" type="range" min="0" max="1" step="0.05" value="0.5"><output></output></div>
+<div class="row"><label>Размер глотки</label><input id="fm" type="range" min="0.8" max="1.35" step="0.01" value="1"><output></output></div>
+<div class="row"><label>Хрип 8-бит</label><input id="crush" type="range" min="0" max="1" step="0.05" value="0.1"><output></output></div>
+<div class="row"><label>Громкость</label><input id="vol" type="range" min="0.8" max="3" step="0.1" value="1.5"><output></output></div>
+<div class="row"><label>Шипение с/ш/щ</label><input id="hiss" type="range" min="0" max="1.5" step="0.05" value="0.5"><output></output></div>
+<div class="row"><label>Взрыв п/т/к</label><input id="burst" type="range" min="0" max="1" step="0.05" value="0.6"><output></output></div>
+<div class="row"><button id="go">Говорить</button><button id="stop" class="g">Стоп</button><button id="dl" class="g" disabled>Скачать</button></div>
+<p id="ph" class="s"></p>
+</main>
+<script>
+// ===== 1. Таблицы фонем (форманты F1,F2,F3 в Гц) =====
+const V={а:[730,1090,2440],о:[570,840,2410],у:[300,870,2240],э:[530,1840,2480],и:[280,2250,2900],ы:[330,1500,2400],A:[600,1250,2450],I:[380,1900,2650]};
+const SN={м:[250,1000,2200,.55,75],н:[250,1500,2500,.55,70],л:[400,900,2600,.7,75],р:[450,1300,1800,.7,70],й:[280,2200,3000,.7,55],в:[300,1100,2300,.7,70]};
+const FR={с:[5500,2400,.7,0,110],з:[4600,2200,.5,1,100],ш:[2700,1300,.95,0,130],ж:[2500,1300,.75,1,115],ф:[4500,3500,.15,0,90],х:[2400,2600,.5,0,100],щ:[3700,1500,.85,0,150],ч:[3800,1600,.85,0,85]};
+const ST={п:[900,1200,800,0],б:[900,1200,800,1],т:[4500,2500,1700,0],д:[4500,2500,1700,1],к:[2300,1500,1800,0],г:[2300,1500,1800,1]};
+const LAT={a:'а',b:'б',c:'к',d:'д',e:'е',f:'ф',g:'г',h:'х',i:'и',j:'ж',k:'к',l:'л',m:'м',n:'н',o:'о',p:'п',q:'к',r:'р',s:'с',t:'т',u:'у',v:'в',w:'в',x:'кс',y:'й',z:'з'};
+const DIG=['ноль','один','два','три','четыре','пять','шесть','семь','восемь','девять'];
+const CONS='бвгджзйклмнпрстфхцчшщ',VOW='аоуэыияеёю';
+const PAIR={б:'п',в:'ф',г:'к',д:'т',ж:'ш',з:'с'},PAIRR={п:'б',ф:'в',к:'г',т:'д',ш:'ж',с:'з'};
+const has=(s,c)=>c!==undefined&&c!==''&&s.includes(c);
+
+// ===== 2. Текст -> фонемы =====
+// словарь частых слов: правильное ударение и произношение (сегодня -> севодня)
+const DICT={гоблин:'г+облин',красный:'кр+асный',буду:'б+уду',вами:'в+ами',свами:'св+ами',сегодня:'сев+одня',что:'шт+о',чтобы:'шт+обы',конечно:'кон+ешно',очень:'+очень',привет:'прив+ет',спасибо:'спас+ибо',пожалуйста:'пож+алуйста',здравствуйте:'здр+авствуйте',хорошо:'хорош+о',хороший:'хор+оший',сейчас:'сейч+ас',можно:'м+ожно',нужно:'н+ужно',потому:'потом+у',почему:'почем+у',когда:'когд+а',тогда:'тогд+а',здесь:'зд+есь',тоже:'т+оже',также:'т+акже',только:'т+олько',который:'кот+орый',которая:'кот+орая',которое:'кот+орое',которые:'кот+орые',этот:'+этот',эта:'+эта',это:'+это',эти:'+эти',всегда:'всегд+а',никогда:'никогд+а',теперь:'теп+ерь',между:'меж+ду',через:'ч+ерез',после:'п+осле',перед:'п+еред',снова:'сн+ова',даже:'д+аже',если:'+если',будет:'б+удет',была:'был+а',было:'б+ыло',были:'б+ыли',человек:'челов+ек',люди:'л+юди',время:'вр+емя',работа:'раб+ота',слово:'сл+ово',голос:'г+олос',язык:'яз+ык',вопрос:'вопр+ос',ответ:'отв+ет',проблема:'пробл+ема',делать:'д+елать',говорить:'говор+ить',сказать:'сказ+ать',хотеть:'хот+еть',говорит:'говор+ит',уже:'уж+е',тебя:'теб+я',меня:'мен+я',себя:'себ+я',тебе:'теб+е',какой:'как+ой',такой:'так+ой',другой:'друг+ой',один:'од+ин',хочу:'хоч+у'};
+const WEAK=new Set('в во к ко с со у о об от до из за на по при про для без над под не ни бы ли же и а но или'.split(' '));
+function word2ph(w){
+  if(!w.includes('+')&&DICT[w])w=DICT[w];
+  const weak=WEAK.has(w);
+  w=w.replace(/ть?ся$/,'ца');                      // учиться -> учица
+  if(/^(конечно|скучно|нарочно|яичница|скворечник)/.test(w.replace(/\+/g,'')))w=w.replace('ч','ш');
+  const L=[];let st=-1;
+  for(const c of w){if(c==='+'){st=L.length;continue;}L.push(c);}
+  const vi=L.map((c,i)=>has(VOW,c)?i:-1).filter(i=>i>=0);
+  if(!vi.length)return [];
+  const yo=L.indexOf('ё');
+  if(yo>=0)st=yo; else if(vi.length===1&&!weak)st=vi[0];
+  const known=st>=0||weak,n=L.length;
+  if(L[0]==='ч'&&L[1]==='т')L[0]='ш';                       // что -> што
+  if(n>=3&&L[n-1]==='о'&&L[n-2]==='г'&&has('ое',L[n-3]))L[n-2]='в'; // -ого -> -ово
+  const P=[];
+  for(let i=0;i<n;i++){
+    const c=L[i],pv=L[i-1],nx=L[i+1];
+    if(c==='ь'||c==='ъ')continue;
+    if(has(VOW,c)){
+      const after=has(CONS,pv),iot=has('яеёю',c);
+      if(iot&&!after)P.push({c:'й',soft:true});
+      let b={я:'а',е:'э',ё:'о',ю:'у'}[c]||c;
+      if(c==='и'&&after&&has('жшц',pv))b='ы';
+      const stress=i===st;let red=false;
+      if(known&&!stress){
+        if(c==='я'||c==='е'){b='I';red=true;}
+        else if(b==='а'||b==='о'){b='A';red=true;}
+      }
+      P.push({c:b,v:1,stress,red,known});
+    }else if(has(CONS,c)){
+      if(c==='ц'){P.push({c:'т'},{c:'с'});continue;}
+      if(c==='ч'){P.push({c:'т',soft:true},{c:'ч',soft:true});continue;}
+      let soft=has('ьяеёюи',nx)&&!has('жшц',c);
+      if(has('щй',c))soft=true;
+      P.push({c,soft});
+    }
+  }
+  // уподобление по звонкости (справа налево) + оглушение на конце
+  for(let i=P.length-1;i>=0;i--){
+    const p=P[i];
+    if(p.v||!(p.c in PAIR||p.c in PAIRR))continue;
+    const nx=P[i+1];let want=null;
+    if(!nx)want=false;
+    else if(!nx.v){if(has('бгджз',nx.c))want=true;else if(has('пфктшсхцчщ',nx.c))want=false;}
+    if(want===true&&p.c in PAIRR)p.c=PAIRR[p.c];
+    if(want===false&&p.c in PAIR)p.c=PAIR[p.c];
+  }
+  return P;
+}
+function tokens(text){
+  text=text.toLowerCase().replace(/[a-z]/g,m=>LAT[m]).replace(/\d/g,m=>' '+DIG[+m]+' ');
+  const out=[],re=/[а-яё+]+|[,.!?;:—-]+|\s+/g,PZ={',':260,';':220,':':220,'—':200,'-':60,'.':480,'!':480,'?':480};
+  // названия букв: нужны, когда текст читается по буквам (азбука)
+  const NAMES={б:'б+э',в:'в+э',г:'г+э',д:'д+э',ж:'ж+э',з:'з+э',й:'и кр+аткое',к:'к+а',л:'+эль',м:'+эм',н:'+эн',п:'п+э',р:'+эр',с:'+эс',т:'т+э',ф:'+эф',х:'х+а',ц:'ц+э',ч:'ч+э',ш:'ш+а',щ:'щ+а',ь:'м+ягкий зн+ак',ъ:'тв+ёрдый зн+ак'};
+  const mt=text.match(re)||[],isW=t=>/^[а-яё+]/.test(t),bare=t=>t.replace(/\+/g,'');
+  const ws=mt.filter(isW);
+  const spell=ws.length>=3&&ws.filter(t=>bare(t).length===1&&NAMES[bare(t)]).length>=ws.length*0.6;
+  let carry='',lastWord=false;
+  for(const t of mt){
+    if(isW(t)){
+      let parts=[t];
+      if(bare(t).length===1&&NAMES[bare(t)]){
+        if(spell)parts=NAMES[bare(t)].split(' ');else{carry+=t;continue;}  // в, к, с слитно со следующим словом
+      }else if(carry){parts=[carry+t];carry='';}
+      let first=true;
+      for(const p of parts){const ph=word2ph(p);if(!ph.length)continue;if(lastWord)out.push({pause:first&&spell?160:80});first=false;out.push(...ph);lastWord=true;}
+    }else if(!/^\s/.test(t)){out.push({pause:PZ[t[0]]||100,pm:t[0]===','?1.1:0});lastWord=false;carry='';}
+  }
+  out.push({pause:150});
+  return out;
+}
+
+// ===== 3. Фонемы -> сегменты управляющих параметров =====
+function build(list,o){
+  const segs=[];let cur=1;
+  const mk=(d,tr,p)=>({d,tr,f1:500,f2:1500,f3:2500,av:0,ah:0,an:0,nf:3000,nbw:1500,pm:cur,trill:false,...p});
+  list.forEach((p,i)=>{
+    if(p.pause){segs.push(mk(p.pause,12,{pm:p.pm||cur}));return;}
+    if(p.v){
+      cur=1+(p.stress?0.12*o.accent*3:0);
+      const pv=list[i-1],f=V[p.c].slice();if(pv&&pv.soft&&p.c!=='и'&&p.c!=='I')f[1]+=0.4*(2100-f[1]);
+      const d=p.stress?135:p.red?60:p.known?75:105;
+      segs.push(mk(d,45,{f1:f[0],f2:f[1],f3:f[2],av:p.stress?1:p.red?.75:.85,ah:.005}));
+      return;
+    }
+    const c=p.c,s=p.soft;
+    if(SN[c]){
+      let[f1,f2,f3,av,d]=SN[c];if(s)f2=Math.max(f2,1900);
+      const e=c==='в'?{}:{};
+      segs.push(mk(d*1.2,25,{f1,f2,f3,av,trill:c==='р',...e}));
+    }else if(FR[c]){
+      let[nf,bw,an,vo,d]=FR[c];if(s&&c!=='щ'&&c!=='ч')nf*=1.2;
+      segs.push(mk(d*1.2,30,{f1:s?300:350,f2:s?2000:1500,f3:2600,av:vo?.35:0,an:an*o.hiss,nf,nbw:bw}));
+    }else if(ST[c]){
+      let[nf,bw,loc,vo]=ST[c];if(s){loc=2000;nf*=1.15;}
+      const nx=list[i+1],F=nx&&nx.v?V[nx.c]:[500,1500,2500],v=vo?.3:0;
+      segs.push(mk(vo?60:75,10,{f1:250,f2:loc,f3:2400,av:v}));
+      segs.push(mk(12,3,{f1:250,f2:loc,f3:2400,av:v,an:.3*o.burst,nf,nbw:bw}));
+      if(!vo)segs.push(mk(28,4,{f1:F[0],f2:F[1],f3:F[2],ah:.06*o.burst}));
+    }
+  });
+  return segs;
+}
+
+// ===== 4. Формантный синтез (метод Клатта, упрощённо) =====
+const FS=22050;
+function render(segs,o,question){
+  const N=segs.map(s=>Math.max(1,Math.round(s.d*FS/1000/o.speed)));
+  const total=N.reduce((a,b)=>a+b,0),out=new Float32Array(total);
+  const keys=['f1','f2','f3','av','ah','an','nf','nbw','pm'];
+  const P={f1:500,f2:1500,f3:2500,av:0,ah:0,an:0,nf:3000,nbw:1500,pm:1};
+  const rs=Array.from({length:6},()=>[0,0]),co=Array.from({length:6},()=>[0,0,0]);
+  const setC=(k,f,bw)=>{const r=Math.exp(-Math.PI*bw/FS),B=2*r*Math.cos(2*Math.PI*f/FS),C=-r*r;co[k]=[1-B-C,B,C];};
+  let ph=0,pos=0,seed=12345,xp=0;
+  // шумовой резонатор с нормировкой: любой шум имеет одинаковую громкость
+  const setN=(f,bw)=>{setC(5,f,bw);const c=co[5],w=2*Math.PI*f/FS;const re=1-c[1]*Math.cos(w)-c[2]*Math.cos(2*w),im=c[1]*Math.sin(w)+c[2]*Math.sin(2*w);const pk=c[0]/Math.hypot(re,im);const pg=pk*pk*Math.min(1,bw*1.57/(FS/2));c[0]/=Math.sqrt(Math.max(pg,1e-4));};
+  const rnd=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/2147483648-1;};
+  const qStart=total-0.35*FS;
+  segs.forEach((s,si)=>{
+    const n=N[si],trn=Math.max(1,Math.min(n,Math.round(s.tr*FS/1000/o.speed))),from={...P};
+    for(let i=0;i<n;i++,pos++){
+      const a=Math.min(1,(i+1)/trn);
+      for(const k of keys)P[k]=from[k]+(s[k]-from[k])*a;
+      let f0=o.pitch*P.pm*(1-0.15*o.accent*(pos/total));
+      if(question&&pos>qStart)f0*=1+0.5*(pos-qStart)/(0.35*FS);
+      ph+=f0/FS;if(ph>=1)ph-=1;
+      // источник: импульс голосовых связок (открытая фаза 60%)
+      const g=ph<0.6?0.5*(1-Math.cos(Math.PI*ph/0.6)):ph<0.75?Math.cos(Math.PI*(ph-0.6)/0.3):0;
+      const av=P.av*(s.trill?0.55+0.45*Math.sin(6.2832*28*pos/FS):1);
+      let y=av*(g-0.4)+P.ah*rnd();
+      if(pos%8===0){const k=o.fm;setC(0,P.f1*k,90);setC(1,P.f2*k,120);setC(2,P.f3*k,180);setC(3,3400*k,250);setC(4,4300*k,320);setN(Math.min(P.nf,9000),Math.max(300,P.nbw));}
+      for(let k=0;k<5;k++){const c=co[k],r=rs[k],v=c[0]*y+c[1]*r[0]+c[2]*r[1];r[1]=r[0];r[0]=v;y=v;}
+      const c5=co[5],r5=rs[5],nv=c5[0]*rnd()+c5[1]*r5[0]+c5[2]*r5[1];r5[1]=r5[0];r5[0]=nv;
+      const fr=P.an*nv*(1-Math.min(1,P.av*3)*0.4*(1-g));
+      const x=y*0.3+fr*0.45;
+      out[pos]=x-0.65*xp;xp=x;                          // предыскажение
+    }
+  });
+  // срезаем шипение выше 5 кГц (два однополюсных фильтра) и нормируем по пику
+  const a=1-Math.exp(-2*Math.PI*6200/FS);let l1=0,l2=0;
+  for(let i=0;i<total;i++){l1+=a*(out[i]-l1);l2+=a*(l1-l2);out[i]=l2;}
+  // компрессор: подтягиваем тихие согласные, чтобы они не тонули рядом с гласными
+  const pk=()=>{const s=Float32Array.from(out,Math.abs).sort();return Math.max(s[Math.floor(total*0.995)],1e-6);};
+  const m0=pk();let env=0;
+  const atk=1-Math.exp(-1/(FS*0.002)),rel=1-Math.exp(-1/(FS*0.08));
+  for(let i=0;i<total;i++){const v=Math.abs(out[i]);env+=(v>env?atk:rel)*(v-env);out[i]*=Math.min(3.5,Math.max(0.4,Math.pow(0.3*m0/Math.max(env,0.03*m0),0.55)));}
+  const mx=pk();
+  const hold=1+Math.floor(o.crush*2),bits=Math.round(16-o.crush*6),stp=Math.pow(2,bits-1);
+  let held=0;
+  for(let i=0;i<total;i++){if(i%hold===0)held=Math.tanh(out[i]*o.vol/mx)*0.98;out[i]=Math.round(held*stp)/stp;}
+  return out;
+}
+
+// ===== 5. Интерфейс =====
+const $=id=>document.getElementById(id);
+const ids=['speed','pitch','accent','fm','crush','burst','hiss','vol'];
+ids.forEach(id=>{const e=$(id),o=e.nextElementSibling;const u=()=>o.textContent=e.value;e.oninput=u;u();});
+let ac=null,src=null;
+function stop(){if(src){try{src.stop();}catch(e){}src=null;}}
+$('stop').onclick=stop;
+$('go').onclick=()=>{
+  try{
+    stop();
+    const t=$('t').value,list=tokens(t),o={};
+    ids.forEach(id=>o[id]=parseFloat($(id).value));
+    const data=render(build(list,o),o,/\?\s*$/.test(t.trim()));
+    $('ph').textContent='';
+    ac=ac||new(window.AudioContext||window.webkitAudioContext)();
+    if(ac.state==='suspended')ac.resume();
+    const buf=ac.createBuffer(1,data.length,FS);buf.copyToChannel(data,0);
+    src=ac.createBufferSource();src.buffer=buf;src.connect(ac.destination);src.start();
+  }catch(e){$('ph').textContent='Ошибка: '+e.message;}
+};
+// ===== Длинные тексты: режем на куски, считаем по очереди и сразу играем =====
+let run=0,srcs=[];
+function stopAll(){run++;srcs.forEach(s=>{try{s.stop();}catch(e){}});srcs=[];}
+$('stop').onclick=()=>{stopAll();$('ph').textContent='';};
+function split(t){
+  const out=[];
+  for(const s of (t.match(/[^.!?\n]+[.!?]*/g)||[])){
+    let cur='';
+    for(const p of (s.match(/[^,;:]+[,;:]*/g)||[s])){
+      if(cur&&cur.length+p.length>160){out.push(cur);cur='';}
+      cur+=p;
+    }
+    if(cur.trim())out.push(cur);
+  }
+  return out;
+}
+$('go').onclick=async()=>{
+  stopAll();const my=run;audioParts=[];$('dl').disabled=true;
+  try{
+    ac=ac||new(window.AudioContext||window.webkitAudioContext)();
+    if(ac.state==='suspended')ac.resume();
+    const o={};ids.forEach(id=>o[id]=parseFloat($(id).value));
+    const parts=split($('t').value);
+    let when=ac.currentTime+0.1;
+    for(let i=0;i<parts.length;i++){
+      if(my!==run)return;
+      $('ph').textContent='Готовлю '+(i+1)+' из '+parts.length+'…';
+      await new Promise(r=>setTimeout(r,20));
+      if(my!==run)return;
+      const list=tokens(parts[i]);
+      if(list.length<2)continue;
+      const data=render(build(list,o),o,/\?\s*$/.test(parts[i].trim()));
+      const buf=ac.createBuffer(1,data.length,FS);buf.copyToChannel(data,0);
+      const s=ac.createBufferSource();s.buffer=buf;s.connect(ac.destination);
+      audioParts.push(data);when=Math.max(when,ac.currentTime+0.05);s.start(when);when+=buf.duration;srcs.push(s);
+    }
+    if(my===run){$('ph').textContent='';$('dl').disabled=!audioParts.length;}
+  }catch(e){$('ph').textContent='Ошибка: '+e.message;}
+};
+// ===== Скачивание: WAV 16 бит, упакованный в ZIP (площадка разрешает только некоторые расширения) =====
+let audioParts=[];
+const CT=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
+function crc32(u){let c=0xFFFFFFFF;for(let i=0;i<u.length;i++)c=CT[(c^u[i])&255]^(c>>>8);return(c^0xFFFFFFFF)>>>0;}
+function makeWav(f){
+  const n=f.length,b=new ArrayBuffer(44+n*2),v=new DataView(b);
+  const w=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};
+  w(0,'RIFF');v.setUint32(4,36+n*2,true);w(8,'WAVEfmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,FS,true);v.setUint32(28,FS*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,n*2,true);
+  for(let i=0;i<n;i++)v.setInt16(44+i*2,Math.max(-1,Math.min(1,f[i]))*32767,true);
+  return new Uint8Array(b);
+}
+function makeZip(name,u8){
+  const nb=new TextEncoder().encode(name),crc=crc32(u8),sz=u8.length;
+  const lh=new DataView(new ArrayBuffer(30)),cd=new DataView(new ArrayBuffer(46)),eo=new DataView(new ArrayBuffer(22));
+  lh.setUint32(0,0x04034b50,true);lh.setUint16(4,20,true);lh.setUint16(12,0x21,true);lh.setUint32(14,crc,true);lh.setUint32(18,sz,true);lh.setUint32(22,sz,true);lh.setUint16(26,nb.length,true);
+  cd.setUint32(0,0x02014b50,true);cd.setUint16(4,20,true);cd.setUint16(6,20,true);cd.setUint16(14,0x21,true);cd.setUint32(16,crc,true);cd.setUint32(20,sz,true);cd.setUint32(24,sz,true);cd.setUint16(28,nb.length,true);
+  eo.setUint32(0,0x06054b50,true);eo.setUint16(8,1,true);eo.setUint16(10,1,true);eo.setUint32(12,46+nb.length,true);eo.setUint32(16,30+nb.length+sz,true);
+  return new Blob([lh,nb,u8,cd,nb,eo]);
+}
+$('dl').onclick=async()=>{
+  try{
+    let dl=null;try{dl=window.claude?await claude.use('downloads'):null;}catch(e){}
+    
+    let n=0;audioParts.forEach(p=>n+=p.length);
+    const all=new Float32Array(n);let k=0;audioParts.forEach(p=>{all.set(p,k);k+=p.length;});
+    const wav=makeWav(all);
+    if(dl){await dl.save({filename:'goblin-krasny.zip',data:makeZip('goblin-krasny.wav',wav)});}
+    else{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([wav],{type:'audio/wav'}));a.download='goblin-krasny.wav';document.body.appendChild(a);a.click();a.remove();}
+  }catch(e){if(!e||e.code!=='declined')$('ph').textContent='Не удалось сохранить: '+((e&&e.message)||e);}
+};
+</script>
+</body>
+</html>

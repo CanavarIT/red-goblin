@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Red Goblin</title>
+<style>
+:root{color-scheme:light;--bg:#fff;--fg:#000;--card:#fff;--ac:#000;--mu:#555;--bd:#999;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 Arial,Helvetica,sans-serif}
+main{max-width:560px;margin:0 auto;padding:18px 16px 40px}
+h1{font:400 22px/1.2 Arial,Helvetica,sans-serif;margin:0 0 6px}
+p.s{color:var(--mu);margin:0 0 14px;font-size:14px}
+textarea{width:100%;box-sizing:border-box;min-height:110px;padding:12px;border:1px solid var(--bd);border-radius:10px;background:var(--card);color:var(--fg);font:16px/1.4 Arial,Helvetica,sans-serif;resize:vertical}
+.row{display:flex;align-items:center;gap:10px;margin:10px 0}
+.row label{flex:0 0 112px;font-size:14px;color:var(--mu)}
+.row input{flex:1;accent-color:var(--ac)}
+.row output{flex:0 0 38px;font:13px ui-monospace,monospace;text-align:right}
+button{font:16px Arial,Helvetica,sans-serif;padding:8px 18px;border:1px solid #000;border-radius:0;background:#eee;color:#000;margin-right:8px}
+button:disabled{opacity:.5}
+</style>
+</head>
+<body>
+<main>
+<h1>Red Goblin</h1>
+<p class="s">Talking formant synthesizer (English). For exact sounds, write phonemes in braces, e.g. {hh ax l ow1} (1 = stress).</p>
+<textarea id="t">Hello, I am the red goblin, and I will be with you.</textarea>
+<div class="row"><label>Speed</label><input id="speed" type="range" min="0.6" max="1.6" step="0.05" value="0.8"><output></output></div>
+<div class="row"><label>Pitch, Hz</label><input id="pitch" type="range" min="70" max="220" step="1" value="105"><output></output></div>
+<div class="row"><label>Intonation</label><input id="accent" type="range" min="0" max="1" step="0.05" value="0.5"><output></output></div>
+<div class="row"><label>Throat size</label><input id="fm" type="range" min="0.8" max="1.35" step="0.01" value="1"><output></output></div>
+<div class="row"><label>8-bit rasp</label><input id="crush" type="range" min="0" max="1" step="0.05" value="0.1"><output></output></div>
+<div class="row"><label>Volume</label><input id="vol" type="range" min="0.8" max="3" step="0.1" value="1.5"><output></output></div>
+<div class="row"><label>Hiss s/sh/f</label><input id="hiss" type="range" min="0" max="1.5" step="0.05" value="0.5"><output></output></div>
+<div class="row"><label>Plosives p/t/k</label><input id="burst" type="range" min="0" max="1" step="0.05" value="0.6"><output></output></div>
+<div class="row"><button id="go">Speak</button><button id="stop">Stop</button><button id="dl" disabled>Download</button></div>
+<p id="ph" class="s"></p>
+</main>
+<script>
+// ===== 1. Phoneme tables (formants F1,F2,F3 in Hz) =====
+const VW={aa:[730,1090,2440],ae:[660,1720,2410],ah:[640,1190,2390],ao:[570,840,2410],eh:[530,1840,2480],er:[490,1350,1690],ih:[390,1990,2550],iy:[270,2290,3010],uh:[440,1020,2240],uw:[300,870,2240],ax:[500,1500,2500]};
+const DIPH={ay:['aa','ih'],ey:['eh','ih'],ow:['ao','uw'],aw:['aa','uw'],oy:['ao','ih']};
+const SN={m:[250,1000,2200,.55,75],n:[250,1500,2500,.55,70],ng:[250,1300,2300,.55,80],l:[400,900,2600,.7,75],r:[400,1100,1500,.7,80],w:[300,700,2200,.7,65],y:[280,2200,3000,.7,55]};
+const FR={s:[5500,2400,.7,0,110],z:[4600,2200,.5,1,100],sh:[2700,1300,.95,0,130],zh:[2500,1300,.75,1,115],f:[4500,3500,.15,0,90],v:[4500,3500,.15,1,80],th:[4500,3500,.12,0,90],dh:[4000,3000,.1,1,60],hh:[1800,2600,.5,0,80]};
+const ST={p:[900,1200,800,0],b:[900,1200,800,1],t:[4500,2500,1700,0],d:[4500,2500,1700,1],k:[2300,1500,1500,0],g:[2300,1500,1500,1]};
+const DIG=['zero','one','two','three','four','five','six','seven','eight','nine'];
+const isV=c=>c in VW||c in DIPH;
+const fv=c=>VW[c]||VW[DIPH[c][0]];
+
+// ===== 2. Text -> phonemes =====
+const D={};
+('the:dh ax|a:ax|an:ax n|and:ae n d|of:ah v|to:t uw|in:ih n|on:aa n|at:ae t|for:f er|but:b ah t|or:ao r|as:ae z|it:ih t|if:ih f|'+
+'you:y uw1|your:y ao1 r|i:ay1|am:ae1 m|is:ih1 z|are:aa1 r|was:w ah1 z|were:w er1|be:b iy|been:b ih1 n|have:hh ae1 v|has:hh ae1 z|do:d uw1|does:d ah1 z|done:d ah1 n|go:g ow1|goes:g ow1 z|gone:g ao1 n|'+
+'said:s eh1 d|says:s eh1 z|say:s ey1|they:dh ey1|them:dh eh1 m|then:dh eh1 n|there:dh eh1 r|their:dh eh1 r|this:dh ih1 s|that:dh ae1 t|these:dh iy1 z|those:dh ow1 z|than:dh ae1 n|with:w ih1 dh|'+
+'what:w ah1 t|when:w eh1 n|where:w eh1 r|who:hh uw1|why:w ay1|how:hh aw1|which:w ih1 ch|would:w uh1 d|could:k uh1 d|should:sh uh1 d|'+
+'zero:z iy1 r ow|one:w ah1 n|two:t uw1|three:th r iy1|four:f ao1 r|five:f ay1 v|six:s ih1 k s|seven:s eh1 v ax n|eight:ey1 t|nine:n ay1 n|ten:t eh1 n|'+
+'hello:hh ax l ow1|hi:hh ay1|goblin:g aa1 b l ih n|red:r eh1 d|me:m iy1|we:w iy1|he:hh iy1|she:sh iy1|my:m ay1|by:b ay1|no:n ow1|so:s ow1|yes:y eh1 s|'+
+'love:l ah1 v|give:g ih1 v|live:l ih1 v|come:k ah1 m|some:s ah1 m|none:n ah1 n|from:f r ah1 m|people:p iy1 p ax l|because:b ih k ah1 z|thank:th ae1 ng k|thanks:th ae1 ng k s|please:p l iy1 z|'+
+'very:v eh1 r iy|every:eh1 v r iy|want:w aa1 n t|here:hh iy1 r|hear:hh iy1 r|other:ah1 dh er|another:ax n ah1 dh er|mother:m ah1 dh er|brother:b r ah1 dh er|today:t ax d ey1|tonight:t ax n ay1 t|'+
+'world:w er1 l d|word:w er1 d|work:w er1 k|know:n ow1|now:n aw1|new:n uw1|only:ow1 n l iy|over:ow1 v er|never:n eh1 v er|ever:eh1 v er|any:eh1 n iy|many:m eh1 n iy|once:w ah1 n s|great:g r ey1 t|good:g uh1 d|'+
+'get:g eh1 t|got:g aa1 t|give:g ih1 v|girl:g er1 l|gift:g ih1 f t|begin:b ih g ih1 n|doing:d uw1 ih ng|going:g ow1 ih ng|something:s ah1 m th ih ng|nothing:n ah1 th ih ng|thing:th ih1 ng|think:th ih1 ng k|'+
+'dont:d ow1 n t|cant:k ae1 n t|wont:w ow1 n t|im:ay1 m|ill:ay1 l|ive:ay1 v|its:ih1 t s|thats:dh ae1 t s|youre:y uh1 r|isnt:ih1 z ax n t|didnt:d ih1 d ax n t|doesnt:d ah1 z ax n t|lets:l eh1 t s|whats:w ah1 t s|theres:dh eh1 r z|hes:hh iy1 z|shes:sh iy1 z|'+
+'speak:s p iy1 k|voice:v oy1 s|dark:d aa1 r k|night:n ay1 t|light:l ay1 t|fight:f ay1 t|fire:f ay1 er|gold:g ow1 l d|treasure:t r eh1 zh er|monster:m aa1 n s t er|computer:k ah m p y uw1 t er|'+
+'water:w ao1 t er|little:l ih1 t ax l|table:t ey1 b ax l|again:ax g eh1 n|against:ax g eh1 n s t|before:b ih f ao1 r|after:ae1 f t er|about:ax b aw1 t|around:ax r aw1 n d|away:ax w ey1|'+
+'both:b ow1 th|most:m ow1 s t|post:p ow1 s t|old:ow1 l d|told:t ow1 l d|cold:k ow1 l d|child:ch ay1 l d|find:f ay1 n d|kind:k ay1 n d|mind:m ay1 n d|wild:w ay1 l d|'+
+'door:d ao1 r|floor:f l ao1 r|poor:p uh1 r|blood:b l ah1 d|flood:f l ah1 d|oh:ow1|okay:ow k ey1|ok:ow k ey1|english:ih1 ng g l ih sh|kill:k ih1 l|death:d eh1 th|head:hh eh1 d|dead:d eh1 d|bread:b r eh1 d|heart:hh aa1 r t|earth:er1 th|learn:l er1 n').split('|').forEach(e=>{const[k,v]=e.split(':');D[k]=v;});
+'ey1,b iy1,s iy1,d iy1,iy1,eh1 f,jh iy1,ey1 ch,ay1,jh ey1,k ey1,eh1 l,eh1 m,eh1 n,ow1,p iy1,k y uw1,aa1 r,eh1 s,t iy1,y uw1,v iy1,d ah1 b ax l y uw,eh1 k s,w ay1,z iy1'.split(',').forEach((v,i)=>{const k=String.fromCharCode(97+i);if(!D[k])D[k]=v;});
+D.a='ax';
+const WEAK=new Set('the a an and of to in on at for but or as it if be he she we me my by with is are was were am do'.split(' '));
+const y=(re)=>new RegExp(re,'y');
+const R=[
+ [y('(?<=[aeiouy].*[td])ed$'),'ax d'],[y('(?<=[aeiouy].*(?:[pkfsx]|sh|ch|c))ed$'),'t'],[y('(?<=[aeiouy].+)ed$'),'d'],
+ [y('(?<=[sxz]|sh|ch)es$'),'ax z'],[y('(?<=[aeiouy].*[bdglmnrvaeiouy])es$'),'z'],[y('(?<=[aeiouy].*)es$'),'s'],
+ [y('a(?=[bcdfgklmnprstvz]e$)'),'ey'],[y('i(?=[bcdfgklmnprstvz]e$)'),'ay'],[y('o(?=[bcdfgklmnprstvz]e$)'),'ow'],[y('u(?=[bcdfgklmnprstvz]e$)'),'uw'],[y('e(?=[bcdfgklmnprstvz]e$)'),'iy'],
+ [y('(?<=[^aeiouy])le$'),'ax l'],[y('(?<=[aeiouy][^aeiouy]+)e$'),''],
+ [y('tion'),'sh ax n'],[y('sion'),'zh ax n'],[y('ture'),'ch er'],[y('ough'),'ow'],[y('eigh'),'ey'],[y('igh'),'ay'],[y('^gh'),'g'],[y('gh'),''],
+ [y('ee|ea'),'iy'],[y('oo(?=k)'),'uh'],[y('oo'),'uw'],[y('ou'),'aw'],[y('ow$'),'ow'],[y('ow'),'aw'],[y('oa'),'ow'],[y('ai|ay'),'ey'],[y('oi|oy'),'oy'],[y('au|aw'),'ao'],[y('ie'),'iy'],[y('ew|ue'),'uw'],[y('ei'),'ey'],
+ [y('ar'),'aa r'],[y('or'),'ao r'],[y('er|ir|ur'),'er'],
+ [y('ch'),'ch'],[y('ck'),'k'],[y('sh'),'sh'],[y('th'),'th'],[y('ph'),'f'],[y('wh'),'w'],[y('ng'),'ng'],[y('nk'),'ng k'],[y('qu'),'k w'],[y('^kn'),'n'],[y('^wr'),'r'],[y('(?<=m)b$'),''],
+ [y('c(?=[eiy])'),'s'],[y('c'),'k'],[y('g(?=[eiy])'),'jh'],[y('g'),'g'],
+ [y('(?<=[aeiouy])s(?=[aeiouy])'),'z'],[y('(?<=[aeiouybdglmnrv])s$'),'z'],[y('s'),'s'],
+ [y('x'),'k s'],[y('j'),'jh'],[y('q'),'k'],[y('^y'),'y'],[y('(?<=[^aeiouy])y$'),'iy'],[y('y'),'ih']
+];
+const S={a:'ae',e:'eh',i:'ih',o:'aa',u:'ah',b:'b',d:'d',f:'f',h:'hh',k:'k',l:'l',m:'m',n:'n',p:'p',r:'r',t:'t',v:'v',w:'w',z:'z'};
+function rules(w){
+  w=w.replace(/([bdfgklmnprstz])\1/g,'$1');
+  const o=[];let i=0;
+  while(i<w.length){
+    let hit=false;
+    for(const[re,p]of R){re.lastIndex=i;const m=re.exec(w);if(m){if(p)o.push(...p.split(' '));i+=m[0].length||1;hit=true;break;}}
+    if(!hit){if(S[w[i]])o.push(S[w[i]]);i++;}
+  }
+  return o;
+}
+function parse(ph,dict,weak){
+  const vi=[];ph.forEach((p,i)=>{if(isV(p.replace(/1$/,'')))vi.push(i);});
+  const anyS=vi.some(j=>/1$/.test(ph[j])),out=[];
+  ph.forEach((p,i)=>{
+    let c=p.replace(/1$/,''),st=/1$/.test(p);
+    if(isV(c)){
+      if(!dict&&i===vi[0])st=true;
+      if(dict&&!anyS&&vi.length===1&&!weak)st=true;
+      if(!st&&!dict&&!(c in DIPH)&&c!=='er'&&c!=='iy'&&c!=='uw')c='ax';
+      out.push({c,v:1,stress:st,red:!st});
+    }else if(c==='ch'){out.push({c:'t',aff:1},{c:'sh'});}
+    else if(c==='jh'){out.push({c:'d',aff:1},{c:'zh'});}
+    else if(SN[c]||FR[c]||ST[c])out.push({c});
+  });
+  return out;
+}
+function tokens(text){
+  text=text.toLowerCase().replace(/\d/g,m=>' '+DIG[+m]+' ');
+  const out=[],re=/\{[^}]*\}|[a-z']+|[,.!?;:—-]+|\s+/g,PZ={',':260,';':220,':':220,'—':200,'-':60,'.':480,'!':480,'?':480};
+  let lastWord=false;
+  for(const t of text.match(re)||[]){
+    let ph=null,dict=false,weak=false;
+    if(t[0]==='{'){ph=t.slice(1,-1).trim().split(/\s+/).filter(Boolean);dict=true;}
+    else if(/^[a-z']/.test(t)){
+      const w=t.replace(/'/g,'');if(!w)continue;
+      weak=WEAK.has(w);
+      if(D[w]){ph=D[w].split(' ');dict=true;}else ph=rules(w);
+    }
+    if(ph){
+      const p=parse(ph,dict,weak);if(!p.length)continue;
+      if(lastWord)out.push({pause:60});
+      out.push(...p);lastWord=true;
+    }else if(!/^\s/.test(t)){out.push({pause:PZ[t[0]]||100,pm:t[0]===','?1.1:0});lastWord=false;}
+  }
+  out.push({pause:150});
+  return out;
+}
+
+// ===== 3. Phonemes -> control parameter segments =====
+function build(list,o){
+  const segs=[];let cur=1;
+  const mk=(d,tr,p)=>({d,tr,f1:500,f2:1500,f3:2500,av:0,ah:0,an:0,nf:3000,nbw:1500,pm:cur,trill:false,...p});
+  list.forEach((p,i)=>{
+    if(p.pause){segs.push(mk(p.pause,12,{pm:p.pm||cur}));return;}
+    if(p.v){
+      cur=1+(p.stress?0.12*o.accent*3:0);
+      const av=p.stress?1:p.red?.75:.85;
+      if(DIPH[p.c]){
+        const a=VW[DIPH[p.c][0]],b=VW[DIPH[p.c][1]];
+        segs.push(mk(p.stress?100:55,40,{f1:a[0],f2:a[1],f3:a[2],av,ah:.005}));
+        segs.push(mk(p.stress?85:45,70,{f1:b[0],f2:b[1],f3:b[2],av:av*.9,ah:.005}));
+      }else{
+        const f=VW[p.c];
+        segs.push(mk(p.stress?(p.c==='er'?150:130):p.red?55:80,45,{f1:f[0],f2:f[1],f3:f[2],av,ah:.005}));
+      }
+      return;
+    }
+    const c=p.c;
+    if(SN[c]){
+      const[f1,f2,f3,av,d]=SN[c];
+      segs.push(mk(d*1.2,25,{f1,f2,f3,av}));
+    }else if(FR[c]){
+      const[nf,bw,an,vo,d]=FR[c];
+      segs.push(mk(d*1.2,30,{f1:350,f2:1500,f3:2600,av:vo?.35:0,an:an*o.hiss,nf,nbw:bw}));
+    }else if(ST[c]){
+      let[nf,bw,loc,vo]=ST[c];
+      const nx=list[i+1],F=nx&&nx.v?fv(nx.c):[500,1500,2500],v=vo?.3:0;
+      if(c==='k'||c==='g')loc=F[1]>1700?2000:1400;
+      const asp=nx&&nx.v&&nx.stress?42:24;
+      segs.push(mk(p.aff?42:vo?60:75,10,{f1:250,f2:loc,f3:2400,av:v}));
+      segs.push(mk(12,3,{f1:250,f2:loc,f3:2400,av:v,an:.3*o.burst,nf,nbw:bw}));
+      if(!vo&&!p.aff)segs.push(mk(asp,4,{f1:F[0],f2:F[1],f3:F[2],ah:.06*o.burst}));
+    }
+  });
+  return segs;
+}
+
+// ===== 4. Formant synthesis (simplified Klatt) =====
+const FS=22050;
+function render(segs,o,question){
+  const N=segs.map(s=>Math.max(1,Math.round(s.d*FS/1000/o.speed)));
+  const total=N.reduce((a,b)=>a+b,0),out=new Float32Array(total);
+  const keys=['f1','f2','f3','av','ah','an','nf','nbw','pm'];
+  const P={f1:500,f2:1500,f3:2500,av:0,ah:0,an:0,nf:3000,nbw:1500,pm:1};
+  const rs=Array.from({length:6},()=>[0,0]),co=Array.from({length:6},()=>[0,0,0]);
+  const setC=(k,f,bw)=>{const r=Math.exp(-Math.PI*bw/FS),B=2*r*Math.cos(2*Math.PI*f/FS),C=-r*r;co[k]=[1-B-C,B,C];};
+  let ph=0,pos=0,seed=12345,xp=0;
+  const setN=(f,bw)=>{setC(5,f,bw);const c=co[5],w=2*Math.PI*f/FS;const re=1-c[1]*Math.cos(w)-c[2]*Math.cos(2*w),im=c[1]*Math.sin(w)+c[2]*Math.sin(2*w);const pk=c[0]/Math.hypot(re,im);const pg=pk*pk*Math.min(1,bw*1.57/(FS/2));c[0]/=Math.sqrt(Math.max(pg,1e-4));};
+  const rnd=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/2147483648-1;};
+  const qStart=total-0.35*FS;
+  segs.forEach((s,si)=>{
+    const n=N[si],trn=Math.max(1,Math.min(n,Math.round(s.tr*FS/1000/o.speed))),from={...P};
+    for(let i=0;i<n;i++,pos++){
+      const a=Math.min(1,(i+1)/trn);
+      for(const k of keys)P[k]=from[k]+(s[k]-from[k])*a;
+      let f0=o.pitch*P.pm*(1-0.15*o.accent*(pos/total));
+      if(question&&pos>qStart)f0*=1+0.5*(pos-qStart)/(0.35*FS);
+      ph+=f0/FS;if(ph>=1)ph-=1;
+      const g=ph<0.6?0.5*(1-Math.cos(Math.PI*ph/0.6)):ph<0.75?Math.cos(Math.PI*(ph-0.6)/0.3):0;
+      const av=P.av*(s.trill?0.55+0.45*Math.sin(6.2832*28*pos/FS):1);
+      let yv=av*(g-0.4)+P.ah*rnd();
+      if(pos%8===0){const k=o.fm;setC(0,P.f1*k,90);setC(1,P.f2*k,120);setC(2,P.f3*k,180);setC(3,3400*k,250);setC(4,4300*k,320);setN(Math.min(P.nf,9000),Math.max(300,P.nbw));}
+      for(let k=0;k<5;k++){const c=co[k],r=rs[k],v=c[0]*yv+c[1]*r[0]+c[2]*r[1];r[1]=r[0];r[0]=v;yv=v;}
+      const c5=co[5],r5=rs[5],nv=c5[0]*rnd()+c5[1]*r5[0]+c5[2]*r5[1];r5[1]=r5[0];r5[0]=nv;
+      const fr=P.an*nv*(1-Math.min(1,P.av*3)*0.4*(1-g));
+      const x=yv*0.3+fr*0.45;
+      out[pos]=x-0.65*xp;xp=x;
+    }
+  });
+  const a=1-Math.exp(-2*Math.PI*6200/FS);let l1=0,l2=0;
+  for(let i=0;i<total;i++){l1+=a*(out[i]-l1);l2+=a*(l1-l2);out[i]=l2;}
+  const pk=()=>{const s=Float32Array.from(out,Math.abs).sort();return Math.max(s[Math.floor(total*0.995)],1e-6);};
+  const m0=pk();let env=0;
+  const atk=1-Math.exp(-1/(FS*0.002)),rel=1-Math.exp(-1/(FS*0.08));
+  for(let i=0;i<total;i++){const v=Math.abs(out[i]);env+=(v>env?atk:rel)*(v-env);out[i]*=Math.min(3.5,Math.max(0.4,Math.pow(0.3*m0/Math.max(env,0.03*m0),0.55)));}
+  const mx=pk();
+  const hold=1+Math.floor(o.crush*2),bits=Math.round(16-o.crush*6),stp=Math.pow(2,bits-1);
+  let held=0;
+  for(let i=0;i<total;i++){if(i%hold===0)held=Math.tanh(out[i]*o.vol/mx)*0.98;out[i]=Math.round(held*stp)/stp;}
+  return out;
+}
+
+// ===== 5. Interface =====
+const $=id=>document.getElementById(id);
+const ids=['speed','pitch','accent','fm','crush','burst','hiss','vol'];
+ids.forEach(id=>{const e=$(id),o=e.nextElementSibling;const u=()=>o.textContent=e.value;e.oninput=u;u();});
+let ac=null,run=0,srcs=[],audioParts=[];
+function stopAll(){run++;srcs.forEach(s=>{try{s.stop();}catch(e){}});srcs=[];}
+$('stop').onclick=()=>{stopAll();$('ph').textContent='';};
+// long texts: split into chunks, synthesize one by one and play right away
+function split(t){
+  const out=[];
+  for(const s of (t.match(/[^.!?\n]+[.!?]*/g)||[])){
+    let cur='';
+    for(const p of (s.match(/[^,;:]+[,;:]*/g)||[s])){
+      if(cur&&cur.length+p.length>160){out.push(cur);cur='';}
+      cur+=p;
+    }
+    if(cur.trim())out.push(cur);
+  }
+  return out;
+}
+$('go').onclick=async()=>{
+  stopAll();const my=run;audioParts=[];$('dl').disabled=true;
+  try{
+    ac=ac||new(window.AudioContext||window.webkitAudioContext)();
+    if(ac.state==='suspended')ac.resume();
+    const o={};ids.forEach(id=>o[id]=parseFloat($(id).value));
+    const parts=split($('t').value);
+    let when=ac.currentTime+0.1;
+    for(let i=0;i<parts.length;i++){
+      if(my!==run)return;
+      $('ph').textContent='Preparing '+(i+1)+' of '+parts.length+'…';
+      await new Promise(r=>setTimeout(r,20));
+      if(my!==run)return;
+      const list=tokens(parts[i]);
+      if(list.length<2)continue;
+      const data=render(build(list,o),o,/\?\s*$/.test(parts[i].trim()));
+      const buf=ac.createBuffer(1,data.length,FS);buf.copyToChannel(data,0);
+      const s=ac.createBufferSource();s.buffer=buf;s.connect(ac.destination);
+      audioParts.push(data);when=Math.max(when,ac.currentTime+0.05);s.start(when);when+=buf.duration;srcs.push(s);
+    }
+    if(my===run){$('ph').textContent='';$('dl').disabled=!audioParts.length;}
+  }catch(e){$('ph').textContent='Error: '+e.message;}
+};
+// ===== Download: 16-bit WAV packed in a ZIP (the host only allows certain extensions) =====
+const CT=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
+function crc32(u){let c=0xFFFFFFFF;for(let i=0;i<u.length;i++)c=CT[(c^u[i])&255]^(c>>>8);return(c^0xFFFFFFFF)>>>0;}
+function makeWav(f){
+  const n=f.length,b=new ArrayBuffer(44+n*2),v=new DataView(b);
+  const w=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};
+  w(0,'RIFF');v.setUint32(4,36+n*2,true);w(8,'WAVEfmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,FS,true);v.setUint32(28,FS*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,n*2,true);
+  for(let i=0;i<n;i++)v.setInt16(44+i*2,Math.max(-1,Math.min(1,f[i]))*32767,true);
+  return new Uint8Array(b);
+}
+function makeZip(name,u8){
+  const nb=new TextEncoder().encode(name),crc=crc32(u8),sz=u8.length;
+  const lh=new DataView(new ArrayBuffer(30)),cd=new DataView(new ArrayBuffer(46)),eo=new DataView(new ArrayBuffer(22));
+  lh.setUint32(0,0x04034b50,true);lh.setUint16(4,20,true);lh.setUint16(12,0x21,true);lh.setUint32(14,crc,true);lh.setUint32(18,sz,true);lh.setUint32(22,sz,true);lh.setUint16(26,nb.length,true);
+  cd.setUint32(0,0x02014b50,true);cd.setUint16(4,20,true);cd.setUint16(6,20,true);cd.setUint16(14,0x21,true);cd.setUint32(16,crc,true);cd.setUint32(20,sz,true);cd.setUint32(24,sz,true);cd.setUint16(28,nb.length,true);
+  eo.setUint32(0,0x06054b50,true);eo.setUint16(8,1,true);eo.setUint16(10,1,true);eo.setUint32(12,46+nb.length,true);eo.setUint32(16,30+nb.length+sz,true);
+  return new Blob([lh,nb,u8,cd,nb,eo]);
+}
+$('dl').onclick=async()=>{
+  try{
+    let dl=null;try{dl=window.claude?await claude.use('downloads'):null;}catch(e){}
+    let n=0;audioParts.forEach(p=>n+=p.length);
+    const all=new Float32Array(n);let k=0;audioParts.forEach(p=>{all.set(p,k);k+=p.length;});
+    const wav=makeWav(all);
+    if(dl){await dl.save({filename:'red-goblin.zip',data:makeZip('red-goblin.wav',wav)});}
+    else{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([wav],{type:'audio/wav'}));a.download='red-goblin.wav';document.body.appendChild(a);a.click();a.remove();}
+  }catch(e){if(!e||e.code!=='declined')$('ph').textContent='Could not save: '+((e&&e.message)||e);}
+};
+</script>
+</body>
+</html>
